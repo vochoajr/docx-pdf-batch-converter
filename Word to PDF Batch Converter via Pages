@@ -1,0 +1,104 @@
+-- Based on droplet from iworkautomation.com
+-- Editted by Vicente Ochoa Jr.
+on run
+	set theseItems to (choose file of type {"com.microsoft.word.doc"} with prompt "Choose the Word documents to export to PDF:" with multiple selections allowed)
+	open theseItems
+end run
+
+on open theseItems
+	set the filesToProcess to {}
+	repeat with i from 1 to the count of theseItems
+		set thisItem to item i of theseItems
+		set the end of the filesToProcess to thisItem
+	end repeat
+	my exportToPDF(filesToProcess)
+end open
+
+on exportToPDF(theseFiles)
+	repeat with i from 1 to the count of theseFiles
+		set thisFile to item i of theseFiles
+		set thisFilePOSIXPath to the POSIX path of thisFile
+		copy my deriveNewFilename(thisFilePOSIXPath, "pdf", "-", "") to {targetName, targetPOSIXpath}
+		set targetFileReference to targetPOSIXpath as POSIX file
+		tell application "Pages"
+			try
+				activate
+				with timeout of 1200 seconds
+					open thisFile
+					delay 1
+					with timeout of 1200 seconds
+						export front document to targetFileReference as PDF
+					end timeout
+					close front document saving no
+				end timeout
+			on error errorMessage number errorNumber
+				if errorNumber is not -128 then
+					display alert errorNumber message errorMessage
+				end if
+				error number -128
+			end try
+		end tell
+	end repeat
+end exportToPDF
+
+on deriveNewFilename(sourceItemPOSIXPath, newNameExtension, incrementSeparator, targetFolderPOSIXPath)
+	copy my itemInfoFor(sourceItemPOSIXPath) to {parentDirectoryPath, sourceItemName, sourceItemBaseName, sourceItemNameExtension}
+	if targetFolderPOSIXPath is "" then
+		set targetFolderPOSIXPath to parentDirectoryPath
+	else if targetFolderPOSIXPath contains "~" then
+		set targetFolderPOSIXPath to (do shell script "echo " & targetFolderPOSIXPath)
+	end if
+	if targetFolderPOSIXPath does not end with "/" then set targetFolderPOSIXPath to targetFolderPOSIXPath & "/"
+	
+	if the sourceItemNameExtension is missing value then
+		set the sourceItemNameExtension to ""
+		if newNameExtension is "" then
+			set extensionSeparator to ""
+		else
+			set extensionSeparator to "."
+		end if
+	else
+		set extensionSeparator to "."
+	end if
+	
+	if the newNameExtension is "" then
+		set targetName to sourceItemName
+		set targetExtension to sourceItemNameExtension
+	else
+		set targetExtension to newNameExtension
+		set targetName to (the sourceItemBaseName & extensionSeparator & targetExtension) as Unicode text
+	end if
+	
+	set targetItemPOSIXPath to targetFolderPOSIXPath & targetName
+	set the fileExistenceStatus to (do shell script "[ -a " & (quoted form of targetItemPOSIXPath) & " ] && echo 'true' || echo 'false'") as boolean
+	if fileExistenceStatus is true then
+		set the nameIncrement to 1
+		repeat
+			set the newName to (the sourceItemBaseName & incrementSeparator & (nameIncrement as Unicode text) & extensionSeparator & targetExtension) as Unicode text
+			set targetItemPOSIXPath to targetFolderPOSIXPath & newName
+			set the fileExistenceStatus to (do shell script "[ -a " & (quoted form of targetItemPOSIXPath) & " ] && echo 'true' || echo 'false'") as boolean
+			if fileExistenceStatus is true then
+				set the nameIncrement to the nameIncrement + 1
+			else
+				set the targetPOSIXpath to (targetFolderPOSIXPath & newName)
+				return {newName, targetPOSIXpath}
+			end if
+		end repeat
+	else
+		set the targetPOSIXpath to (targetFolderPOSIXPath & targetName)
+		return {targetName, targetPOSIXpath}
+	end if
+end deriveNewFilename
+
+on itemInfoFor(sourceItemPOSIXPath)
+	set the parentDirectoryPath to (do shell script "dirname " & (the quoted form of sourceItemPOSIXPath))
+	if parentDirectoryPath does not end with "/" then set parentDirectoryPath to parentDirectoryPath & "/"
+	set the itemFileName to (do shell script "basename " & (quoted form of sourceItemPOSIXPath))
+	set the itemNameWithoutExtension to (do shell script "file=" & (quoted form of itemFileName) & ";echo ${file%.*}")
+	if itemFileName contains "." then
+		set the itemFileExtension to do shell script "file=" & (quoted form of itemFileName) & ";echo ${file##*.}"
+	else
+		set the itemFileExtension to missing value
+	end if
+	return {parentDirectoryPath, itemFileName, itemNameWithoutExtension, itemFileExtension}
+end itemInfoFor
